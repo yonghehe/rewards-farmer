@@ -152,7 +152,17 @@ docker compose build
 docker compose run --rm rewards-farmer
 ```
 
-The container defaults to `QUERY_SOURCE=trends`, so it needs no Ollama account and no model. Set `QUERY_SOURCE=llm` and `OLLAMA_HOST` to a reachable address to use a model instead.
+The container defaults to `QUERY_SOURCE=trends`, so it needs no LLM account and no model.
+
+To use a model instead, copy the container's sample configuration and fill it in:
+
+```sh
+cp .env.docker.example .env.docker      # PowerShell: Copy-Item .env.docker.example .env.docker
+```
+
+`docker compose` loads `.env.docker` for the `rewards-farmer` service, and keeps the host's `.env` out of the container: its `EDGE_BINARY` and `USER_DATA_DIR` are host paths, and its Ollama address is a host one. (`REWARDS_ACCOUNTS` and `REWARDS_FARMER_LOG_LEVEL` are still substituted from the host's `.env`, as before.) Set `QUERY_SOURCE=llm` in `.env.docker`, then point it at an endpoint the container can reach. Inside the container `localhost` is the container itself, so an Ollama running on the host is `http://host.docker.internal:11434/v1` rather than the `localhost` address a host run uses. The same file takes the OpenRouter key if you use that provider.
+
+Microsoft Edge for Linux is published for amd64 only, so the image is too. On an arm64 host (Docker Desktop on Apple silicon) build it with `docker build --platform linux/amd64 -t rewards-farmer .`; the compose file then uses that image.
 
 **Sign in first.** The profile in `data-dir` starts logged out. Sign in from inside the container, which opens the Rewards page in a browser there and puts that browser on your screen as a web page:
 
@@ -169,6 +179,15 @@ One account at a time, since it is one browser window:
 ```sh
 REWARDS_ACCOUNTS=personal docker compose run --rm --service-ports signin
 ```
+
+PowerShell does not set a variable for a single command that way; set it first and clear it afterwards:
+
+```sh
+$env:REWARDS_ACCOUNTS="personal"; docker compose run --rm --service-ports signin
+Remove-Item Env:REWARDS_ACCOUNTS
+```
+
+This matters when your `.env` names several accounts, because the sign-in service reads the same `REWARDS_ACCOUNTS` and refuses a list.
 
 The port is published on `127.0.0.1` only, so it is not reachable from the network. While the service is up it is showing a live Microsoft sign-in page.
 
@@ -189,13 +208,13 @@ Signing in through the container sidesteps all of this: the profile is written b
 
 You can still sign in with a host browser if you prefer, and on a Linux host it works. Close every window of that profile afterwards, and close them rather than killing them: Chromium allows one process per profile directory, and a browser that was killed leaves a `SingletonLock` naming the machine that wrote it, which the container reads as the profile being open somewhere else.
 
-**Provide the visual search image on the host too.** `visual_search.jpg` is not in the repository and is not built into the image, so create it once in the project root and the compose file mounts it in:
+**Visual search image.** `visual_search.jpg` is not in the repository, so the container generates one inside itself the first time the visual search task runs. Nothing needs creating on the host. To use an image of your own instead, mount it over the generated one:
 
 ```sh
-python src/random_image_for_visual_search.py
+docker compose run --rm -v "$PWD/my-image.jpg:/app/visual_search.jpg:ro" rewards-farmer
 ```
 
-Without it every other task still runs; only the visual search one fails.
+Generating the image reaches Wikimedia over the network. Without a network the visual search task is the only one that fails; every other task still runs.
 
 Multiple accounts work the same way in the container. Sign each profile in once, one at a time, then run them together:
 

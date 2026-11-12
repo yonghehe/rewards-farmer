@@ -1,13 +1,18 @@
 # Runs the bot without installing Edge, a driver or Python on the host.
 #
-# The image carries only what main.py actually reaches: selenium and numpy.
-# pygetwindow, keyboard, matplotlib and pygame are used solely by the
-# recording and visualisation scripts, which are developer tools rather than
-# part of a run, and two of them are Windows-only.
+# The image carries what a run actually reaches: selenium, numpy, requests,
+# python-dotenv and pillow. requests is the LLM client and pillow draws the
+# visual search image, both of which a normal run can reach. pygetwindow,
+# keyboard, matplotlib and pygame are used solely by the recording and
+# visualisation scripts, which are developer tools rather than part of a run,
+# and two of them are Windows-only.
 #
-# QUERY_SOURCE defaults to trends here so a container needs no Ollama account
-# and no model download. Set it to llm and point OLLAMA_HOST at a reachable
-# host to use a model instead.
+# QUERY_SOURCE defaults to trends here so a container needs no LLM account and
+# no model download. Put QUERY_SOURCE=llm in .env.docker, which
+# docker-compose.yml loads, to use a model instead.
+#
+# Microsoft Edge for Linux is amd64-only. On an arm64 host (Docker Desktop on
+# Apple silicon) build with --platform linux/amd64.
 
 FROM python:3.12-slim-bookworm
 
@@ -52,7 +57,12 @@ RUN apt-get update \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir "selenium>=4.46.0,<5.0.0" "numpy" "python-dotenv"
+RUN pip install --no-cache-dir \
+	"selenium>=4.46.0,<5.0.0" \
+	"numpy" \
+	"python-dotenv" \
+	"requests>=2.32.3,<3.0.0" \
+	"pillow>=12.3.0,<13.0.0"
 
 COPY src/ ./src/
 COPY nouns.txt ./

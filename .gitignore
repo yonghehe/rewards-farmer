@@ -8,4 +8,5 @@ Todo.md
 data-dir/
 __pycache__/
 .env
+.env.docker
 .venv*

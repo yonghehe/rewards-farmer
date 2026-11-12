@@ -13,27 +13,34 @@ services:
     # partway through a page without it.
     shm_size: 1gb
     environment:
-      # trends needs no account or model, which is why it is the default here.
-      # To use a model instead, set QUERY_SOURCE=llm and give OLLAMA_HOST an
-      # address the container can reach: localhost inside a container is the
-      # container, so ollama running on the host is host.docker.internal, and
-      # 0.0.0.0 is a bind address that cannot be dialled at all.
-      #
-      #   QUERY_SOURCE=llm OLLAMA_HOST=host.docker.internal:11434 docker compose run --rm rewards-farmer
-      QUERY_SOURCE: ${QUERY_SOURCE:-trends}
+      # The container decides these itself. REWARDS_ACCOUNTS and the log level
+      # are substituted from the host's .env, where a host run already keeps
+      # them, so there is one place to edit.
       REWARDS_HEADLESS: "1"
-      # Comma separated, one profile directory each. Leave unset for a single
-      # profile in data-dir, which is the existing behaviour.
       REWARDS_ACCOUNTS: ${REWARDS_ACCOUNTS:-}
-      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      REWARDS_FARMER_LOG_LEVEL: ${REWARDS_FARMER_LOG_LEVEL:-INFO}
+    env_file:
+      # Optional container-specific settings: QUERY_SOURCE=llm plus the
+      # provider, endpoint and key it needs. Copy .env.docker.example to
+      # .env.docker and edit it.
+      #
+      # The host's .env is deliberately not loaded here. It carries host paths
+      # (EDGE_BINARY, USER_DATA_DIR) that mean something else or nothing in the
+      # container, and an Ollama address of localhost, which inside the
+      # container is the container itself rather than the machine running it.
+      - path: .env.docker
+        required: false
+    # So an Ollama on the host can be reached as host.docker.internal on Linux
+    # too; Docker Desktop already provides that name.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Keeps the sign-in across container rebuilds.
       - ./data-dir:/app/data-dir
-      # The visual search task uploads this file, which is gitignored and so is
-      # never in the image. Create it first with
-      # `python src/random_image_for_visual_search.py`; a path that does not
-      # exist yet is mounted as an empty directory rather than a file.
-      - ./visual_search.jpg:/app/visual_search.jpg:ro
+      # visual_search.jpg is not in the repository. A run generates it inside
+      # the container when it is missing, so nothing has to be mounted here. To
+      # supply your own image instead, bind mount it over the generated one:
+      #   - ./my-visual-search.jpg:/app/visual_search.jpg:ro
 
   # One off, before the first run. Opens the Rewards sign-in in a browser
   # inside the container and puts that browser on your screen as a web page,
