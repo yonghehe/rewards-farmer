@@ -189,7 +189,13 @@ Remove-Item Env:REWARDS_ACCOUNTS
 
 This matters when your `.env` names several accounts, because the sign-in service reads the same `REWARDS_ACCOUNTS` and refuses a list.
 
-The port is published on `127.0.0.1` only, so it is not reachable from the network. While the service is up it is showing a live Microsoft sign-in page.
+The port is published on `127.0.0.1` only, so it is not reachable from the network. While the service is up it is showing a live Microsoft sign-in page. When the container runs on another machine, as it does under Docker on a server or LXC, publish it on that machine's own address for the run:
+
+```sh
+SIGNIN_BIND=192.168.1.50 docker compose run --rm --service-ports signin
+```
+
+Then open `http://192.168.1.50:6080` instead of `localhost:6080`. Without editing anything, the equivalent one-off is `docker compose run --rm -p 192.168.1.50:6080:6080 signin`. `SIGNIN_BIND=0.0.0.0` listens on every interface, which shows a live account session to the whole network, so prefer the machine's LAN address, and close the Edge window when you are done (that ends the container and the published port). An SSH tunnel (`ssh -L 6080:127.0.0.1:6080 user@host`) is the option that publishes nothing at all.
 
 Signing in signs the browser in, not just the website, so Edge may sync bookmarks and autofill into the profile it just created. `data-dir` is a bot profile living in the project directory rather than your everyday browser profile, and it is gitignored, but it is worth knowing what ends up there.
 

@@ -67,8 +67,14 @@ services:
       REWARDS_ACCOUNTS: ${REWARDS_ACCOUNTS:-}
     ports:
       # 127.0.0.1 is the security boundary, not decoration: for as long as this
-      # is up the port shows a live Microsoft sign-in page. Publishing it on
-      # 0.0.0.0 would offer that to the whole network.
-      - "127.0.0.1:6080:6080"
+      # is up the port shows a live Microsoft sign-in page. When the container
+      # runs on another machine, set SIGNIN_BIND to that machine's own address
+      # for the run instead of publishing to the whole network:
+      #
+      #   SIGNIN_BIND=192.168.1.50 docker compose run --rm --service-ports signin
+      #
+      # Then open http://192.168.1.50:6080. 0.0.0.0 listens on every interface
+      # and offers a live account session to the whole network.
+      - "${SIGNIN_BIND:-127.0.0.1}:6080:6080"
     volumes:
       - ./data-dir:/app/data-dir
