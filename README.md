@@ -96,6 +96,8 @@ For OpenRouter, the code uses the OpenAI-compatible chat completions API at `htt
 
 If the configuration options are not provided, they default to `LLM_PROVIDER=local`, `LOCAL_LLM_BASE_URL=http://localhost:11434/v1`, `LOCAL_LLM_MODEL=gemma4:cloud`, and `OPENROUTER_MODEL=openrouter/free`.
 
+For a thinking model such as qwen3.5 the reasoning phase is wasted work here, because the answer only has to be a short search query. Set `LLM_THINK=false` to request non-thinking output through Ollama's native `/api/chat`, which is the endpoint that honours `think: false`; the OpenAI-compatible endpoint does not reliably expose the switch. `LLM_THINK=true` forces thinking on, and any other value is passed as a named level from `/api/show` (for example `low`). Leave it unset to keep the model's default. This only applies to the `local` provider.
+
 You must also provide an image for the script to upload to complete the visual search task. A helper script is included at `src/random_image_for_visual_search.py` that will download an image from Wikipedia named `visual_search.jpg` into the project root for you. You may also provide an image of your own, just ensure that the absolute path of the image is placed in the `VISUAL_SEARCH_IMAGE_PATH` constant at the top of `rewards_tasks.py`.
 
 ### Profile Setup
@@ -160,7 +162,9 @@ To use a model instead, copy the container's sample configuration and fill it in
 cp .env.docker.example .env.docker      # PowerShell: Copy-Item .env.docker.example .env.docker
 ```
 
-`docker compose` loads `.env.docker` for the `rewards-farmer` service, and keeps the host's `.env` out of the container: its `EDGE_BINARY` and `USER_DATA_DIR` are host paths, and its Ollama address is a host one. (`REWARDS_ACCOUNTS` and `REWARDS_FARMER_LOG_LEVEL` are still substituted from the host's `.env`, as before.) Set `QUERY_SOURCE=llm` in `.env.docker`, then point it at an endpoint the container can reach. Inside the container `localhost` is the container itself, so an Ollama running on the host is `http://host.docker.internal:11434/v1` rather than the `localhost` address a host run uses. The same file takes the OpenRouter key if you use that provider.
+`docker compose` loads `.env.docker` for the `rewards-farmer` service, and keeps the host's `.env` out of the container: its `EDGE_BINARY` and `USER_DATA_DIR` are host paths, and its Ollama address is a host one. (`REWARDS_ACCOUNTS` and `REWARDS_FARMER_LOG_LEVEL` are still substituted from the host's `.env`, as before.) Set `QUERY_SOURCE=llm` in `.env.docker`, then point it at an endpoint the container can reach. Inside the container `localhost` is the container itself, so an Ollama on the host is `http://host.docker.internal:11434/v1`, and an Ollama on another machine is that machine's LAN address. The same file takes the OpenRouter key if you use that provider.
+
+For a thinking model in the container (qwen3.5 and friends), add `LLM_THINK=false` to `.env.docker` as well; see the note in [Where search queries come from](#where-search-queries-come-from).
 
 Microsoft Edge for Linux is published for amd64 only, so the image is too. On an arm64 host (Docker Desktop on Apple silicon) build it with `docker build --platform linux/amd64 -t rewards-farmer .`; the compose file then uses that image.
 

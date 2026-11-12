@@ -84,7 +84,90 @@ def _get_llm_headers() -> dict[str, str]:
 
 	return headers
 
+THINK_ENV_VAR = "LLM_THINK"
+
+
+def _thinking_control():
+	"""The thinking setting to ask the model for, or None for its default.
+
+	false/0/no/off disables thinking, true/1/yes/on enables it, and any other
+	value is passed through as a named level from /api/show (for example
+	"low").
+
+	This is read by the native Ollama call below rather than the
+	OpenAI-compatible one: on qwen3.5 the native chat endpoint is the one that
+	honours think=false, while /v1/chat/completions only offers the coarser
+	reasoning_effort field and does not reliably switch reasoning off.
+	"""
+	raw = os.environ.get(THINK_ENV_VAR, "").strip()
+
+	if not raw:
+		return None
+
+	lowered = raw.lower()
+
+	if lowered in ("false", "0", "no", "off"):
+		return False
+	if lowered in ("true", "1", "yes", "on"):
+		return True
+
+	return raw
+
+
+def _ollama_chat_url() -> str:
+	"""Ollama's own chat endpoint, from an OpenAI-compatible base URL."""
+	base = _get_llm_base_url()
+
+	# LOCAL_LLM_BASE_URL is the OpenAI-compatible prefix, .../v1; the native
+	# API hangs off the server root instead.
+	if base.endswith("/v1"):
+		base = base[:-len("/v1")]
+
+	return f"{base}/api/chat"
+
+
+def _ollama_chat_response(messages: list[dict[str, str]], think) -> str:
+	"""One completion through Ollama's native API, with thinking controlled.
+
+	message.content is the answer and message.thinking is the reasoning trace,
+	so reading content alone means a thinking model still yields just the
+	query even when thinking is left on.
+	"""
+	response = requests.post(
+		_ollama_chat_url(),
+		headers=_get_llm_headers(),
+		json={
+			"model": _get_llm_model(),
+			"messages": messages,
+			"stream": False,
+			"think": think,
+		},
+		timeout=float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "60")),
+	)
+	response.raise_for_status()
+
+	payload = response.json()
+	error = payload.get("error") if isinstance(payload, dict) else None
+
+	if error:
+		raise RuntimeError(f"Ollama refused the request: {error}")
+
+	content = payload["message"]["content"]
+
+	if not isinstance(content, str):
+		raise RuntimeError(f"Unexpected LLM response content type: {type(content)!r}")
+
+	return content
+
+
 def get_llm_response(messages: list[dict[str, str]]) -> str:
+	think = _thinking_control()
+
+	# Only the local provider is Ollama-shaped. An OpenAI-compatible endpoint
+	# elsewhere has no /api/chat, so it keeps the request below untouched.
+	if think is not None and DEFAULT_LLM_PROVIDER in ("local", "ollama"):
+		return _ollama_chat_response(messages, think)
+
 	response = requests.post(
 		f"{_get_llm_base_url()}/chat/completions",
 		headers=_get_llm_headers(),
