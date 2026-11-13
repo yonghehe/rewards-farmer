@@ -2,6 +2,7 @@ import random
 from typing import Iterable
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 
 FIRST_INTERVAL = (0.0, 0.1)
 SECOND_INTERVAL = (0.1, 0.2)
@@ -28,4 +29,16 @@ class KeyboardUtils:
 
 			actions.pause(random.uniform(interval[0], interval[1]))
 
+		actions.perform()
+
+	def clear(self):
+		"""Empty the focused field with Ctrl+A and Delete.
+
+		The search box's own clear button was the old way, and the pointer
+		click on it missed often enough to leave the previous query in the box
+		and concatenate the next one onto it (#59). Select-all and delete does
+		not care how large or where that button is.
+		"""
+		actions = ActionChains(self.driver, duration=0)
+		actions.key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).send_keys(Keys.DELETE)
 		actions.perform()

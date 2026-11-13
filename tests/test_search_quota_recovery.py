@@ -90,6 +90,9 @@ class SearchPage:
 	def send_keys(self, value):
 		self.sent += 1
 		self.earned = min(self.maximum, self.earned + self.credit)
+		# A real search navigates to a results page; the batch waits for that
+		# before it counts the query.
+		self.current_url = f"https://www.bing.com/search?q=synthetic-{self.sent}"
 
 
 class SearchQuotaRecoveryTests(unittest.TestCase):
@@ -105,7 +108,7 @@ class SearchQuotaRecoveryTests(unittest.TestCase):
 		tasks.driver = driver
 		tasks.elements = element_selectors.ElementSelectionUtils(driver)
 		tasks.mouse = types.SimpleNamespace(move_to_element=lambda element: setattr(driver, "last_target", element), human_like_click=driver.click)
-		tasks.keyboard = types.SimpleNamespace(send_keys=driver.send_keys)
+		tasks.keyboard = types.SimpleNamespace(send_keys=driver.send_keys, clear=lambda: None)
 		tasks.tab_utils = types.SimpleNamespace(ensure_focus=lambda: None)
 		tasks.main_window, tasks.progress = "rewards", None
 		return tasks
@@ -122,37 +125,28 @@ class SearchQuotaRecoveryTests(unittest.TestCase):
 		tasks = self.tasks()
 		error, logs = self.run_searches(tasks)
 		self.assertIsNone(error)
-		self.assertEqual((tasks.driver.sent, tasks.driver.clear_clicks, tasks.driver.earned), (19, 19, 60))
+		self.assertEqual((tasks.driver.sent, tasks.driver.earned), (19, 60))
 		self.assertEqual(tasks.driver.visited, ["https://www.bing.com/", rewards_tasks.REWARDS_HOME_URL, "https://rewards.bing.com/earn"])
 		warning = "WARNING:rewards_tasks:Search result could not be verified after 19 searches (NoSuchElementException), reloading once"
 		self.assertIn(warning, logs.output)
 		print(warning)
 		self.assertIn("INFO:rewards_tasks:Search quota complete: 60/60", logs.output)
 
-	def test_last_query_credited_before_clear_button_disappears(self):
-		tasks = self.tasks(clear_after=19)
-		error, logs = self.run_searches(tasks)
-		self.assertIsNone(error)
-		self.assertEqual((tasks.driver.sent, tasks.driver.clear_clicks, tasks.driver.earned), (19, 18, 60))
-		self.assertEqual(tasks.driver.visited, ["https://www.bing.com/", "https://rewards.bing.com/earn"])
-		self.assertIn("INFO:rewards_tasks:Round 1: 19 searches -> 60/60", logs.output)
-
 	def test_short_recovery_preserves_original_error_without_guessing_credit(self):
-		for clear_after in (None, 18):
-			with self.subTest(clear_after=clear_after):
-				tasks = self.tasks(clear_after=clear_after, credit=0)
-				error, logs = self.run_searches(tasks)
-				self.assertIs(error, tasks.driver.original_error)
-				self.assertEqual(tasks.driver.visited.count("https://rewards.bing.com/earn"), 1)
-				self.assertFalse(any("Search quota complete" in line for line in logs.output))
+		# The batch finishes and credits nothing, then the returning page has
+		# no Earn link, so the recovered reading cannot show a full quota and
+		# the original error is what the task reports.
+		tasks = self.tasks(credit=0)
+		error, logs = self.run_searches(tasks)
+		self.assertIs(error, tasks.driver.original_error)
+		self.assertEqual(tasks.driver.visited.count("https://rewards.bing.com/earn"), 1)
+		self.assertFalse(any("Search quota complete" in line for line in logs.output))
 
 	def test_unreadable_recovery_preserves_original_error_not_the_recovery_error(self):
-		for clear_after in (None, 19):
-			with self.subTest(clear_after=clear_after):
-				tasks = self.tasks(clear_after=clear_after, recovery_works=False)
-				error, _ = self.run_searches(tasks)
-				self.assertIs(error, tasks.driver.original_error)
-				self.assertEqual(tasks.driver.visited.count("https://rewards.bing.com/earn"), 1)
+		tasks = self.tasks(recovery_works=False)
+		error, _ = self.run_searches(tasks)
+		self.assertIs(error, tasks.driver.original_error)
+		self.assertEqual(tasks.driver.visited.count("https://rewards.bing.com/earn"), 1)
 
 	def test_timeout_after_batch_recovers_once_when_fresh_quota_is_full(self):
 		tasks = self.tasks(missing_earn=False)

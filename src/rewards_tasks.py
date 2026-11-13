@@ -51,6 +51,18 @@ class ElementNeverAppeared(TimeoutException):
 	"""
 
 
+class SearchNeverSubmitted(Exception):
+	"""A query was typed but never produced a Bing results page.
+
+	Typing and Enter succeed whether or not anything is listening: an overlay
+	can hold the focus (#80), the page can still be hydrating, or the search
+	box can be empty. Before this type the batch counted those attempts as
+	searches, reported [OK] and left the quota at 0/60 with nothing to explain
+	it. The on-the-spot reason is in the message, so the log names the query
+	and the page it stayed on.
+	"""
+
+
 def task_failure_report(exc: BaseException, progress: str | None = None) -> tuple[str, str]:
 	"""The tag and the reason a failed task is reported with.
 
@@ -79,6 +91,10 @@ def task_failure_report(exc: BaseException, progress: str | None = None) -> tupl
 		cause = f"on the page but not ready in time ({name})"
 	elif isinstance(exc, NoSuchElementException):
 		cause = None
+	elif isinstance(exc, SearchNeverSubmitted):
+		# This one carries its own next step: the query and the page it was
+		# still on. Prefixing the class name would only bury that.
+		cause = log_utils.exception_summary(exc)
 	else:
 		cause = f"{name}: {log_utils.exception_summary(exc)}"
 
@@ -693,6 +709,11 @@ class RewardsTaskUtils:
 	def run_search_batch(self, count: int, already_sent: int = 0) -> int:
 		"""Search up to count queries and return how many actually went out.
 
+		Only a query that produced a Bing results page is counted. Typing does
+		not prove anything: when the search box does not have the focus, the
+		keystrokes go nowhere, no search happens, and the batch used to report
+		them anyway (#59, #80).
+
 		The trends source can come back with fewer queries than asked for, so
 		the caller cannot assume count.
 		"""
@@ -700,37 +721,108 @@ class RewardsTaskUtils:
 		self.driver.get("https://www.bing.com/")
 		self.tab_utils.ensure_focus()
 
+		# The prompt on bing.com is a modal whose overlay eats keystrokes
+		# without raising (#80). Dismiss it before anything is typed.
 		self.dismiss_cookie_consent()
 
 		self.wait_for_element(self.elements.get_bing_search_bar)
 
-		# search bar should be auto-focused
-
 		sent_here = 0
 
-		for i, query in enumerate(
-			queries.related_queries(count)
-		):
-			self.keyboard.send_keys(f"{query} -noai{Keys.ENTER}")
-			sent_here = i + 1
+		for query in queries.related_queries(count):
+			if not self._submit_search(query):
+				# The first query failing means this page is not taking input
+				# at all, and the other nineteen would only spend minutes
+				# failing the same way. Stop, and say why.
+				if sent_here == 0:
+					raise SearchNeverSubmitted(
+						f"query {query!r} did not reach a Bing results page "
+						f"(still at {self._current_url()})"
+					)
+
+				logger.warning(
+					"Query %r did not reach a Bing results page after a retry, skipping it",
+					query
+				)
+				continue
+
+			sent_here += 1
 			sent = already_sent + sent_here
 			self._searches_sent = sent
 			self.progress = f"sent {sent} {'search' if sent == 1 else 'searches'}"
 
 			time.sleep(random.uniform(5.5, 7.5))
 
-			try: self.wait_for_then_click(self.elements.get_clear_bing_search_query_button)
-			except StaleElementReferenceException:
-				logger.warning(
-					"StaleElementReferenceException when trying to click the clear button for query %s. Trying again...",
-					i + 1
-				)
-				self.wait_for_then_click(self.elements.get_clear_bing_search_query_button)
+		if sent_here == 0:
+			raise SearchNeverSubmitted("the query source produced no searches")
 
 		self.driver.get(REWARDS_HOME_URL)
 		self.tab_utils.ensure_focus()
 
 		return sent_here
+
+	def _current_url(self) -> str:
+		try:
+			return self.driver.current_url or ""
+		except Exception:
+			return ""
+
+	def focus_bing_search_bar(self):
+		"""Click the search box, because focus is what makes the typing land.
+
+		Both search entry points used to assume the box was auto-focused. When
+		it was not, the characters went to whatever had the focus instead and
+		the next wait still passed, so the batch reported searches nobody made.
+		"""
+		self.wait_for_then_click(self.elements.get_bing_search_bar)
+
+	def _wait_for_search_results(self, before: str, timeout: float) -> bool:
+		"""Wait for the page to become a Bing results page for this query.
+
+		The results page already has a search box with the query in it, so a
+		URL that already contains /search proves nothing on its own: it has to
+		change from where it was before Enter.
+		"""
+		def navigated(_):
+			url = self._current_url()
+
+			return "/search" in url and url != before
+
+		try:
+			WebDriverWait(self.driver, timeout).until(navigated)
+		except TimeoutException:
+			return False
+
+		return True
+
+	def _submit_search(self, query: str) -> bool:
+		"""Type one query and say whether a results page actually loaded."""
+		timeout = getattr(self, "search_result_timeout", 15)
+		before = self._current_url()
+
+		for attempt in (1, 2):
+			self.focus_bing_search_bar()
+			self.keyboard.clear()
+			logger.debug("Typing search %r", query)
+			self.keyboard.send_keys(f"{query} -noai{Keys.ENTER}")
+
+			if self._wait_for_search_results(before, timeout):
+				logger.debug("Search %r landed on %s", query, self._current_url())
+
+				return True
+
+			if attempt == 1:
+				# A prompt can appear on the first navigation, or the page can
+				# be mid-render. One clean retry, then it is reported.
+				logger.warning(
+					"Query %r did not produce a results page (still at %s); "
+					"dismissing any prompt and retrying once",
+					query, self._current_url()
+				)
+				self.dismiss_cookie_consent()
+				before = self._current_url()
+
+		return False
 
 	def restore_main_tab(self):
 		"""Close the stray tabs, keeping the one the tasks work in.
