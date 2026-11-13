@@ -13,7 +13,6 @@ tests/
 *.log
 *.png
 *.jpg
-poetry.lock
 README.md
 docs/
 # The host's .env and any container-specific .env.docker are runtime config,

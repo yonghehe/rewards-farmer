@@ -2,22 +2,27 @@
 
 Automation for MS Rewards based on [https://youtu.be/4qdPcMNaioA](https://youtu.be/4qdPcMNaioA).
 
+A Windows desktop app built on this farmer, with setup, run history and a schedule, lives in [mardausdennis/rewards-farmer-app](https://github.com/mardausdennis/rewards-farmer-app).
+
 ## Table of Contents
 
 - [Core Setup & Running Instructions](#core-setup--running-instructions)
+	- [Configuration Script](#configuration-script)
 	- [Where search queries come from](#where-search-queries-come-from)
 	- [Installing Dependencies](#installing-dependencies)
-	- [Profile Setup](#profile-setup)
+	- [Single Profile Setup](#single-profile-setup)
 - [If Edge will not start](#if-edge-will-not-start)
 - [Running more than one account](#running-more-than-one-account)
 - [Docker](#docker)
 - [Logging](#logging)
+- [Conditional runs and records](#conditional-runs-and-records)
 - [Windows Virtual Desktop (Windows only)](#windows-virtual-desktop-windows-only)
 
 
 ## Core Setup & Running Instructions
 
-IMPORTANT: Use at your own risk. Microsoft may take action against your account for using automated scripts to gain rewards points. The YouTube video contains more details about the techniques implemented to avoid detection of this script.
+> [!IMPORTANT]
+> Use at your own risk. Microsoft may take action against your account for using automated scripts to gain rewards points. The YouTube video contains more details about the techniques implemented to avoid detection of this script.
 
 Clone the repository.
 
@@ -58,6 +63,8 @@ Running `init-config.py` with the `--manage-accounts` flag (shown below) will al
 ```sh
 py .\src\init-config.py --manage-accounts
 ```
+
+For signing into multiple accounts properly, see the [relevant notice](#proper-signin-notice).
 
 ### Where search queries come from
 
@@ -100,11 +107,19 @@ For a thinking model such as qwen3.5 the reasoning phase is wasted work here, be
 
 You must also provide an image for the script to upload to complete the visual search task. A helper script is included at `src/random_image_for_visual_search.py` that will download an image from Wikipedia named `visual_search.jpg` into the project root for you. You may also provide an image of your own, just ensure that the absolute path of the image is placed in the `VISUAL_SEARCH_IMAGE_PATH` constant at the top of `rewards_tasks.py`.
 
-### Profile Setup
+### Single Profile Setup
 
-The profile directory in `src/constants.py` is set to `Default`. If this signs you in to a global profile that you do not want to use for automation, then you can create a new profile from within the webdriver instance manually and then change the `PROFILE_NAME` constant to `Profile 1` (or the equivalent number).
+> [!TIP]
+> It is recommended to configure `REWARDS_ACCOUNTS` rather than run the script using the default configuration from this section, even if you are running only one account. This allows each profile to be isolated by a named data directory and makes it easier to add another account later.
+>
+> You can do this using the [configuration script](#configuration-script) or by [manual configuration](#running-more-than-one-account). This method will create entirely new profiles separate from the default profile discussed here, so you will have to complete sign in again.
 
-Run main.py (`python src/main.py`; paths are resolved from the repository, so it can be started from any directory), wait for the page to launch, and then CTRL-C to quit the application immediately. Sign in to the created profile with your Microsoft account on both Bing and `rewards.bing.com`.
+By default, the script runs a single account using the `Default` profile in the base data directory. To sign in to this profile, you can do one of two things to launch the browser:
+
+1. Run main.py (`python src/main.py`; paths are resolved from the repository, so it can be started from any directory), wait for the page to launch, and then CTRL-C to quit the application immediately.
+2. Run Edge directly through `msedge --user-data-dir="<USER_DATA_DIR>" --profile-directory=Default https://rewards.bing.com`. Note that the default user data directory is `<repo>\data-dir`.
+
+Once the browser launches, sign in to the created profile with your Microsoft account on both Bing and `rewards.bing.com`. Additionally, see the [relevant notice](#proper-signin-notice) on signing in properly.
 
 EU Users: you may have to accept a consent banner once on `rewards.bing.com` and on the Bing search page, `bing.com`. Once you consent, your choice will be saved for future runs using the same profile, so you will not need to interact with the banner during automated runs.
 
@@ -140,8 +155,14 @@ REWARDS_ACCOUNTS=personal,spare python src/main.py
 Each is signed in once by hand, the same way as the single profile, using its own directory:
 
 ```
-msedge --user-data-dir="<repo>\data-dir\personal" --profile-directory=Default https://rewards.bing.com
+msedge --user-data-dir="<USER_DATA_DIR>\personal" --profile-directory=Default https://rewards.bing.com
 ```
+
+Note that the default user data directory is `<repo>\data-dir`.
+
+<a id="proper-signin-notice"></a>
+> [!NOTE]
+> When signing in to an account, whether through the above command or through the accounts manager in the configuration script, you must ensure that you sign in to the Edge profile, `rewards.bing.com`, *and* `bing.com` so that the script never accidentally uses a global account associated with your Windows account. To do this, when you launch the sign-in window either via the above command or the accounts manager, look for the profile icon in the top right hand corner of the window and click on it. If the browser does not display the desired account, click on "Profile settings" and select "Sign out" on the page that appears. The Edge window will briefly refresh. Then, click on the profile icon in the top right again. There should be a dropdown menu of accounts to choose from. Choose the correct account and sign in. Then, head to `rewards.bing.com` and `bing.com` to make sure they are both using the desired account. If they are not, sign out from those sites and then click sign in.
 
 They run one after another, and an account that fails is reported and skipped rather than ending the run, whether it fails to start or dies partway through. Leave `REWARDS_ACCOUNTS` unset and everything behaves exactly as before, using the single profile in `data-dir`.
 
@@ -203,6 +224,19 @@ Then open `http://192.168.1.50:6080` instead of `localhost:6080`. Without editin
 
 Signing in signs the browser in, not just the website, so Edge may sync bookmarks and autofill into the profile it just created. `data-dir` is a bot profile living in the project directory rather than your everyday browser profile, and it is gitignored, but it is worth knowing what ends up there.
 
+### Using a local LLM with Docker
+
+Point the base URL to the Docker host gateway. Example .env for Ollama Llama 3.2:
+```env
+QUERY_SOURCE=llm
+LLM_PROVIDER=local
+LOCAL_LLM_BASE_URL=http://host.docker.internal:11434/v1
+LOCAL_LLM_MODEL=llama3.2
+```
+
+If your model provider listens on localhost only, you must configure it to also listen on Docker's network bridge. Example for Ollama:
+`OLLAMA_HOST=0.0.0.0:11434 ollama serve`
+
 <details>
 <summary>Why sign-in has to happen inside the container</summary>
 
@@ -258,6 +292,26 @@ REWARDS_FARMER_LOG_LEVEL=DEBUG REWARDS_FARMER_LOG_FILE=run.log python src/main.p
 
 If you are opening an issue about a crash, running with `REWARDS_FARMER_LOG_LEVEL=DEBUG` and attaching the log is the most useful thing you can include.
 
+## Conditional runs and records
+
+`--read-state` records open work before and after farming. `--check-only` reads it without starting tasks; it still opens Edge to inspect the Rewards page
+
+`--only-if-open` reads first and runs when at least 15 points are known to be open, or a quest step is unlocked. Change the threshold with `--min-points`; when only a quest qualifies, only quests run. An unreadable page is skipped unless you also pass `--run-if-unreadable`. `--unattended` exits without waiting for Enter
+
+Windows (PowerShell)
+```sh
+python src/main.py --only-if-open --min-points 20 --unattended
+```
+
+*nix (Bash)
+```sh
+python src/main.py --check-only --unattended
+```
+
+Runs write timestamped JSONL records under `runs/`, with account and task outcomes and any requested state reads. `runs/quest-steps-today.json` tracks quest links already clicked today so an unchanged link does not trigger another conditional run. Without new flags, console output stays unchanged
+
+A lock under `USER_DATA_DIR` (by default `data-dir`) prevents two farmer runs from using the same profile root at once. A second run exits with code 3 before opening Edge
+
 ## Windows Virtual Desktop (Windows only)
 
 To run the browser on a separate Windows Virtual Desktop so searches run in the background without interrupting your current workspace:
@@ -276,7 +330,7 @@ Windows (PowerShell)
 $env:USE_VIRTUAL_DESKTOP="true"; python src/main.py
 ```
 
-> **Note:** The script automatically detects which virtual desktop you started from and calculates the exact number of navigation hops so it returns directly to your starting desktop. When `CLEANUP_VIRTUAL_DESKTOP=true`, the worker desktop is safely closed after you press Enter on exit, returning you to your main desktop.
+> [!NOTE]
+> The script automatically detects which virtual desktop you started from and calculates the exact number of navigation hops so it returns directly to your starting desktop. When `CLEANUP_VIRTUAL_DESKTOP=true`, the worker desktop is safely closed after you press Enter on exit, returning you to your main desktop.
 
 Please open up a GitHub issue if you run into any difficulties.
-

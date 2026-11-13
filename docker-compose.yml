@@ -9,13 +9,16 @@ services:
   rewards-farmer:
     build: .
     image: rewards-farmer
+    platform: linux/amd64
     # Chromium wants more than the default 64MB of shared memory and crashes
     # partway through a page without it.
     shm_size: 1gb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # The container decides these itself. REWARDS_ACCOUNTS and the log level
+    # are substituted from the host's .env, where a host run already keeps
+    # them, so there is one place to edit.
     environment:
-      # The container decides these itself. REWARDS_ACCOUNTS and the log level
-      # are substituted from the host's .env, where a host run already keeps
-      # them, so there is one place to edit.
       REWARDS_HEADLESS: "1"
       REWARDS_ACCOUNTS: ${REWARDS_ACCOUNTS:-}
       REWARDS_FARMER_LOG_LEVEL: ${REWARDS_FARMER_LOG_LEVEL:-INFO}
@@ -30,10 +33,6 @@ services:
       # container is the container itself rather than the machine running it.
       - path: .env.docker
         required: false
-    # So an Ollama on the host can be reached as host.docker.internal on Linux
-    # too; Docker Desktop already provides that name.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       # Keeps the sign-in across container rebuilds.
       - ./data-dir:/app/data-dir
@@ -60,6 +59,7 @@ services:
   signin:
     build: .
     image: rewards-farmer
+    platform: linux/amd64
     shm_size: 1gb
     command: ["python", "src/signin.py"]
     environment:
