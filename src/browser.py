@@ -69,6 +69,22 @@ def build_options(account: accounts.Account) -> webdriver.EdgeOptions:
 		options.add_argument("--window-size=1920,1080")
 		options.add_argument("--no-sandbox")
 		options.add_argument("--disable-dev-shm-usage")
+	else:
+		# A headed browser on a normal desktop sizes its own window. Under
+		# Xvfb in a container there is no window manager, so Edge keeps its
+		# small default and the pointer code aims at controls that are out of
+		# view. REWARDS_WINDOW_SIZE sets the same geometry explicitly there.
+		window_size = os.environ.get("REWARDS_WINDOW_SIZE", "").strip()
+
+		if window_size:
+			options.add_argument(f"--window-size={window_size}")
+
+		# A container runs as root, and Chromium refuses to start there
+		# without this. The sign-in browser passes the same switch for the
+		# same reason; a normal desktop run keeps the sandbox.
+		if hasattr(os, "geteuid") and os.geteuid() == 0:
+			options.add_argument("--no-sandbox")
+			options.add_argument("--disable-dev-shm-usage")
 
 	return options
 

@@ -192,6 +192,32 @@ class TestDriverEnvironment(EnvTestCase):
 
 		self.assertIn("--accept-lang=en-US", self.seen["options"].arguments)
 
+	def test_a_headed_browser_in_a_container_gets_an_explicit_window_size(self):
+		# No window manager under Xvfb, so Edge keeps its small default and
+		# the pointer code aims at controls that are out of view.
+		with mock.patch.object(browser, "HEADLESS", False), \
+			mock.patch.dict(os.environ, {"REWARDS_WINDOW_SIZE": "1600,900"}):
+			browser.start_driver(ACCOUNT)
+
+		self.assertIn("--window-size=1600,900", self.seen["options"].arguments)
+
+	def test_a_headed_browser_on_a_desktop_keeps_its_own_window(self):
+		with mock.patch.object(browser, "HEADLESS", False), \
+			mock.patch.dict(os.environ, {"REWARDS_WINDOW_SIZE": ""}):
+			browser.start_driver(ACCOUNT)
+
+		self.assertFalse(
+			any(argument.startswith("--window-size=") for argument in self.seen["options"].arguments)
+		)
+
+	def test_a_headed_browser_running_as_root_drops_the_chromium_sandbox(self):
+		# A container runs as root, and Chromium refuses to start otherwise.
+		with mock.patch.object(browser, "HEADLESS", False), \
+			mock.patch("browser.os.geteuid", create=True, return_value=0):
+			browser.start_driver(ACCOUNT)
+
+		self.assertIn("--no-sandbox", self.seen["options"].arguments)
+
 
 class TestPathsIgnoreTheWorkingDirectory(unittest.TestCase):
 	"""#71: launched from C:\\WINDOWS\\system32, the profile was created there."""

@@ -49,7 +49,7 @@ RUN EDGE_VERSION="$(microsoft-edge --version | awk '{print $3}')" \
 # host. Only src/signin.py reaches any of this; a run never does.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		xvfb x11vnc novnc websockify \
+		xvfb xauth x11vnc novnc websockify \
 	&& rm -rf /var/lib/apt/lists/* \
 	# Debian ships vnc.html and no index.html, so a bare localhost:6080 is a 404
 	# that reads as the feature being broken.
